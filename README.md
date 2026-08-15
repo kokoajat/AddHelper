@@ -16,12 +16,31 @@ npm start
 Selain: <http://localhost:4173>. Ei tietokantaa, ei käännösvaihetta — tiedot tallentuvat
 `data/events.json`-tiedostoon ja kuvat `data/uploads/`-kansioon.
 
-### AI-tekstit (valinnainen)
+### API-avain (valinnainen, tarvitaan AI-teksteihin)
+
+Avain luetaan ympäristömuuttujasta `ANTHROPIC_API_KEY` — sitä ei kirjoiteta koodiin.
+Hae avain osoitteesta <https://platform.claude.com> → Settings → API keys.
+
+**Suositeltu tapa — `.env`-tiedosto projektin juureen:**
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+cp .env.example .env
+# avaa .env ja liitä avain riville ANTHROPIC_API_KEY=
 npm start
 ```
+
+`.env` on `.gitignore`ssa, joten avain ei päädy versionhallintaan. `npm start` lukee sen
+automaattisesti; ilman tiedostoa käynnistys toimii normaalisti.
+
+**Muut tavat:**
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... npm start          # vain tälle käynnistykselle
+echo 'export ANTHROPIC_API_KEY=sk-ant-...' >> ~/.zshrc   # pysyvästi (uusi terminaali)
+```
+
+Käynnistyksen jälkeen yläpalkin merkki kertoo tilan: *AI: claude-opus-5* tarkoittaa että avain
+löytyi, *AI: pois — mallipohjat* että ei löytynyt.
 
 Ilman avainta kaikki toimii, mutta tekstit tulevat mallipohjista AI:n sijaan. Jos AI-kutsu
 epäonnistuu, alusta putoaa automaattisesti mallipohjiin ja kertoo syyn — työnkulku ei jää jumiin.

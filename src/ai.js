@@ -56,6 +56,28 @@ function eventBrief(event) {
   return rows.filter(([, value]) => value).map(([label, value]) => `${label}: ${value}`).join('\n');
 }
 
+/** Kääntää API-virheet suomeksi ja kertoo mitä pitää tehdä. */
+function friendlyError(err) {
+  const status = err?.status;
+  const raw = err?.message || 'Tuntematon virhe.';
+
+  if (raw.includes('Could not resolve authentication')) {
+    return 'API-avainta ei löytynyt. Lisää ANTHROPIC_API_KEY .env-tiedostoon ja käynnistä palvelin uudelleen.';
+  }
+  if (status === 401) {
+    return 'API-avain ei kelpaa. Tarkista .env-tiedoston ANTHROPIC_API_KEY (avain on yli 100 merkkiä '
+      + 'ja alkaa sk-ant-api03-, ilman lainausmerkkejä) ja käynnistä palvelin uudelleen.';
+  }
+  if (status === 403) return 'API-avaimella ei ole oikeutta tähän malliin.';
+  if (status === 429) return 'Käyttöraja tuli vastaan. Odota hetki ja yritä uudelleen.';
+  if (status === 400 && /credit|billing|balance/i.test(raw)) {
+    return 'Tilillä ei ole käyttösaldoa. Lisää saldoa osoitteessa platform.claude.com → Billing.';
+  }
+  if (status >= 500) return 'Claude ei vastaa juuri nyt. Yritä hetken päästä uudelleen.';
+  if (err?.name === 'APIConnectionError') return 'Verkkoyhteyttä ei saatu. Tarkista internet-yhteys.';
+  return raw;
+}
+
 /**
  * @returns {Promise<{copy: object, model: string}>}
  * @throws jos API-kutsu epäonnistuu — kutsuja päättää varautumisesta.
@@ -70,16 +92,21 @@ export async function generateCopy(event, { instruction } = {}) {
     instruction ? `\nLisäohje tähän versioon: ${instruction}` : '',
   ].join('\n');
 
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: 16000,
-    system: SYSTEM,
-    output_config: {
-      effort: 'low',
-      format: { type: 'json_schema', schema: SCHEMA },
-    },
-    messages: [{ role: 'user', content: userText }],
-  });
+  let response;
+  try {
+    response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 16000,
+      system: SYSTEM,
+      output_config: {
+        effort: 'low',
+        format: { type: 'json_schema', schema: SCHEMA },
+      },
+      messages: [{ role: 'user', content: userText }],
+    });
+  } catch (err) {
+    throw new Error(friendlyError(err));
+  }
 
   if (response.stop_reason === 'refusal') {
     throw new Error('Malli kieltäytyi vastaamasta tähän pyyntöön.');

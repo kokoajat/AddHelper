@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="fi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AddHelper — tapahtumamarkkinoinnin työnkulku</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>📣</text></svg>" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">📣</span>
+        <div>
+          <h1>AddHelper</h1>
+          <p>Yksi tapahtuma sisään — kaikki kanavat ulos.</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <span id="ai-status" class="pill pill-muted">…</span>
+        <a class="btn btn-ghost" href="/api/calendar.ics">Vie kaikki kalenteriin</a>
+        <button class="btn btn-primary" id="new-event">+ Uusi tapahtuma</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <section class="panel">
+          <h2>Tapahtumat</h2>
+          <div id="event-list" class="event-list"></div>
+        </section>
+        <section class="panel" id="wednesday-panel"></section>
+      </aside>
+
+      <section class="content" id="content"></section>
+    </main>
+
+    <div class="modal-backdrop" id="modal" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-head">
+          <h2 id="modal-title">Tapahtuman tiedot</h2>
+          <button class="btn btn-ghost" id="modal-close" aria-label="Sulje">✕</button>
+        </div>
+        <div class="modal-body" id="modal-body"></div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

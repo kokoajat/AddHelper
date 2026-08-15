@@ -1,0 +1,17 @@
+{
+  "name": "addhelper",
+  "version": "1.0.0",
+  "description": "Tapahtumamarkkinoinnin työnkulkualusta: yksi tapahtuma sisään, kaikki kanavat ulos muutamalla klikkauksella.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.1"
+  }
+}

@@ -20,7 +20,7 @@ import {
   EXPORT_SET,
   PRESETS,
   PRESET_BY_ID,
-  TEXT_POSITIONS,
+  TEMPLATES,
   attachCropControls,
   defaultSettings,
   exportPreset,
@@ -393,9 +393,9 @@ function cropEditor(event, { withText = false } = {}) {
     h('option', { value: 'tayta', selected: settings.fit === 'tayta' }, 'Täytä (rajaa reunoista)'),
     h('option', { value: 'sovita', selected: settings.fit === 'sovita' }, 'Sovita (koko kuva näkyviin)'));
 
-  const textSelect = h('select', { onchange: (e) => update({ text: e.target.value }) },
-    ...Object.entries(TEXT_POSITIONS).map(([value, label]) =>
-      h('option', { value, selected: settings.text === value }, label)));
+  const templateSelect = h('select', { onchange: (e) => update({ template: e.target.value }) },
+    ...Object.entries(TEMPLATES).map(([value, label]) =>
+      h('option', { value, selected: settings.template === value }, label)));
 
   eventImage(event).then((img) => { image = img; draw(); }).catch((err) => toast(err.message, true));
   attachCropControls(canvas, () => ({ image, settings }), update);
@@ -410,7 +410,7 @@ function cropEditor(event, { withText = false } = {}) {
       h('div', { class: 'editor-row' },
         h('label', {}, 'Koko', presetSelect),
         h('label', {}, 'Rajaus', fitSelect),
-        withText ? h('label', {}, 'Teksti', textSelect) : null),
+        h('label', {}, 'Pohja', templateSelect)),
       h('div', { class: 'editor-row' },
         h('label', {}, `Lähennys`, zoomInput),
         withText ? h('label', {}, 'Korostusväri',

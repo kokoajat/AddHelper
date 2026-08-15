@@ -105,8 +105,25 @@ tuottaa juuri sen kanavan koon samasta rajauksesta.
 | YouTube – pikkukuva | 1280 × 720 | 16:9 |
 
 Säätimet: **Koko** valitsee kuvasuhteen, **Rajaus** joko rajaa reunoista tai sovittaa koko kuvan
-sumennetulle taustalle, **Lähennys** zoomaa, ja kuvaa raahataan hiirellä. *Lataa kaikki koot*
-tuottaa neljä yleisintä kokoa kerralla — selain kysyy luvan usean tiedoston lataamiseen.
+sumennetulle taustalle, **Pohja** valitsee tekstin asettelun, **Lähennys** zoomaa, ja kuvaa
+raahataan hiirellä. *Lataa kaikki koot* tuottaa neljä yleisintä kokoa kerralla — selain kysyy
+luvan usean tiedoston lataamiseen.
+
+### Julistepohjat
+
+Sama sisältö, viisi asettelua. Pohja pätee kaikkiin kokoihin, ja tekstilohko kutistuu
+automaattisesti mahtumaan myös matalissa vaakakuvissa.
+
+| Pohja | Käyttö |
+| ----- | ------ |
+| **Alalaita** | Teksti alareunassa liukuvärin päällä — yleiskäyttöinen oletus |
+| **Ylälaita** | Sama ylhäällä, kun kuvan tärkein kohta on alhaalla |
+| **Nauha** | Tumma palkki alla; kuva jää kokonaan näkyviin palkin yläpuolelle |
+| **Keskitetty** | Klassinen juliste: verho koko kuvan päällä, teksti keskellä |
+| **Minimi** | Pieni kulmalaatta — jättää kuvan mahdollisimman paljon esiin |
+| **Ei tekstiä** | Pelkkä rajattu kuva |
+
+Korostusväri on säädettävissä Feelment-vaiheessa ja vaikuttaa kaikkiin pohjiin.
 
 Koot ovat alustojen yleisimmät julkaisukoot. Alustat päivittävät niitä ajoittain; jos jokin muuttuu,
 listan voi korjata tiedostosta `public/poster.js`.
@@ -128,7 +145,7 @@ src/copy.js               Mallipohjaiset tekstit
 src/ai.js                 Tekstigenerointi Claudella
 public/index.html         Käyttöliittymä
 public/app.js             Näkymälogiikka
-public/poster.js          Julisteen piirto (canvas)
+public/poster.js          Rajaus, julistepohjat ja vienti (canvas)
 public/shared/            Palvelimen ja selaimen yhteinen koodi
   workflow.js             Vaiheet ja riippuvuudet
   format.js               Päivämäärä- ja tekstiapurit

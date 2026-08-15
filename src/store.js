@@ -66,6 +66,7 @@ function normalize(event) {
     description: event.description || '',
     livestream: Boolean(event.livestream),
     image: event.image || null,
+    poster: event.poster || null, // rajaus- ja tekstiasetukset kuvamuokkaimesta
     copy: event.copy || null,
     copySource: event.copySource || null,
     copyGeneratedAt: event.copyGeneratedAt || null,

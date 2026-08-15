@@ -16,7 +16,18 @@ import {
   toISODate,
 } from './shared/format.js';
 import { googleCalendarUrl } from './shared/calendar.js';
-import { ASPECTS, loadImage, renderPoster } from './poster.js';
+import {
+  EXPORT_SET,
+  PRESETS,
+  PRESET_BY_ID,
+  TEXT_POSITIONS,
+  attachCropControls,
+  defaultSettings,
+  exportPreset,
+  loadImage,
+  normalizeSettings,
+  renderPoster,
+} from './poster.js';
 
 const LANES = {
   1: 'Vaihe 1 · Tapahtuma ja lähetyksen intro',
@@ -293,6 +304,139 @@ function detailsSummary(event) {
   return h('div', { class: 'step-note' }, rows.join(' · ') || 'Tiedot puuttuvat.');
 }
 
+/* --------------------------- kuvan rajaustyökalu --------------------------- */
+
+const posterDrafts = new Map();
+const posterSaveTimers = new Map();
+const imageCache = new Map();
+
+function posterSettings(event) {
+  if (!posterDrafts.has(event.id)) posterDrafts.set(event.id, normalizeSettings(event.poster));
+  return posterDrafts.get(event.id);
+}
+
+/** Tallennus viiveellä, jotta raahaus ei tuota pyyntöä joka liikkeestä. */
+function savePosterSettings(event) {
+  clearTimeout(posterSaveTimers.get(event.id));
+  posterSaveTimers.set(event.id, setTimeout(async () => {
+    const settings = posterSettings(event);
+    try {
+      await api(`/events/${event.id}`, { method: 'PUT', body: { poster: settings } });
+      const local = state.events.find((e) => e.id === event.id);
+      if (local) local.poster = { ...settings };
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }, 600));
+}
+
+function eventImage(event) {
+  if (!event.image) return Promise.resolve(null);
+  const src = `/uploads/${event.image.file}?t=${encodeURIComponent(event.image.uploadedAt || '')}`;
+  if (!imageCache.has(src)) imageCache.set(src, loadImage(src));
+  return imageCache.get(src);
+}
+
+function fileBase(event) {
+  return (eventTitle(event) || 'tapahtuma')
+    .toLowerCase().replace(/[äå]/g, 'a').replace(/ö/g, 'o')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'tapahtuma';
+}
+
+function downloadDataUrl(dataUrl, filename) {
+  const link = document.createElement('a');
+  link.href = dataUrl;
+  link.download = filename;
+  link.click();
+}
+
+/**
+ * Rajaustyökalu. Sama rajaus (polttopiste + zoom) pätee kaikkiin kuvasuhteisiin,
+ * joten jokainen kanava saa oman kokonsa ilman uutta rajausta.
+ * @param {object} options withText: näytetäänkö tekstiasettelun säätimet
+ */
+function cropEditor(event, { withText = false } = {}) {
+  const settings = posterSettings(event);
+  let image = null;
+
+  const canvas = h('canvas', { class: 'poster-canvas' });
+  const sizeLabel = h('div', { class: 'step-note' });
+  const zoomInput = h('input', {
+    type: 'range', min: '1', max: '4', step: '0.02', value: String(settings.zoom),
+    oninput: (e) => update({ zoom: Number(e.target.value) }, false),
+    onchange: () => savePosterSettings(event),
+  });
+
+  function draw() {
+    renderPoster(canvas, image, event, settings);
+    const preset = PRESET_BY_ID[settings.presetId];
+    sizeLabel.textContent = `${preset.w} × ${preset.h} px · ${preset.ratio} · ${preset.note}`;
+    zoomInput.value = String(settings.zoom);
+  }
+
+  function update(patch, persist = true) {
+    Object.assign(settings, patch);
+    draw();
+    if (persist) savePosterSettings(event);
+  }
+
+  const presetSelect = h('select', { onchange: (e) => update({ presetId: e.target.value }) });
+  for (const channel of [...new Set(PRESETS.map((p) => p.channel))]) {
+    const group = h('optgroup', { label: channel });
+    for (const preset of PRESETS.filter((p) => p.channel === channel)) {
+      group.append(h('option', { value: preset.id, selected: settings.presetId === preset.id }, preset.label));
+    }
+    presetSelect.append(group);
+  }
+
+  const fitSelect = h('select', { onchange: (e) => update({ fit: e.target.value }) },
+    h('option', { value: 'tayta', selected: settings.fit === 'tayta' }, 'Täytä (rajaa reunoista)'),
+    h('option', { value: 'sovita', selected: settings.fit === 'sovita' }, 'Sovita (koko kuva näkyviin)'));
+
+  const textSelect = h('select', { onchange: (e) => update({ text: e.target.value }) },
+    ...Object.entries(TEXT_POSITIONS).map(([value, label]) =>
+      h('option', { value, selected: settings.text === value }, label)));
+
+  eventImage(event).then((img) => { image = img; draw(); }).catch((err) => toast(err.message, true));
+  attachCropControls(canvas, () => ({ image, settings }), update);
+  draw();
+
+  return {
+    settings,
+    getImage: () => image,
+    node: h('div', { class: 'editor' },
+      canvas,
+      sizeLabel,
+      h('div', { class: 'editor-row' },
+        h('label', {}, 'Koko', presetSelect),
+        h('label', {}, 'Rajaus', fitSelect),
+        withText ? h('label', {}, 'Teksti', textSelect) : null),
+      h('div', { class: 'editor-row' },
+        h('label', {}, `Lähennys`, zoomInput),
+        withText ? h('label', {}, 'Korostusväri',
+          h('input', {
+            type: 'color', value: settings.accent,
+            oninput: (e) => update({ accent: e.target.value }, false),
+            onchange: () => savePosterSettings(event),
+          })) : null),
+      withText
+        ? h('input', {
+          placeholder: 'Lisäteksti kuvaan (esim. “Liput ovelta”)', value: settings.extra,
+          oninput: (e) => update({ extra: e.target.value }, false),
+          onchange: () => savePosterSettings(event),
+        })
+        : null,
+      h('p', { class: 'step-note' },
+        'Raahaa kuvaa hiirellä ja säädä lähennystä. Sama rajaus siirtyy kaikkiin kokoihin.'),
+      h('div', { class: 'step-actions' },
+        h('button', {
+          class: 'btn btn-sm btn-ghost',
+          onclick: () => update({ zoom: 1, fx: 0.5, fy: 0.5 }),
+        }, 'Keskitä uudelleen')),
+    ),
+  };
+}
+
 function imageStep(event, step) {
   const input = h('input', {
     type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif',
@@ -305,8 +449,9 @@ function imageStep(event, step) {
         try {
           await api(`/events/${event.id}/image`, { method: 'POST', body: { dataUrl: reader.result } });
           await api(`/events/${event.id}/steps/${step.id}`, { method: 'POST', body: { status: 'valmis' } });
+          imageCache.clear();
           await refresh();
-          toast('Kuva tallennettu.');
+          toast('Kuva tallennettu. Tarkista rajaus jokaiselle kanavalle.');
         } catch (err) {
           toast(err.message, true);
         }
@@ -315,12 +460,41 @@ function imageStep(event, step) {
     },
   });
 
+  if (!event.image) {
+    return h('div', { style: 'display:flex;flex-direction:column;gap:10px' },
+      h('p', { class: 'step-note' },
+        'Lataa tapahtuman kuva. Rajaustyökalu aukeaa heti latauksen jälkeen, '
+        + 'ja jokainen kanava saa siitä oman kokonsa.'),
+      input);
+  }
+
+  const editor = cropEditor(event, { withText: false });
   return h('div', { style: 'display:flex;flex-direction:column;gap:10px' },
-    event.image
-      ? h('img', { class: 'thumb', src: `/uploads/${event.image.file}?t=${event.updatedAt}`, alt: 'Tapahtuman kuva' })
-      : h('p', { class: 'step-note' }, 'Lataa tapahtuman kuva tai videon still-kuva. Sitä käytetään julisteessa ja kanavissa.'),
-    input,
-  );
+    editor.node,
+    h('div', { class: 'step-actions' },
+      h('button', {
+        class: 'btn btn-sm btn-primary',
+        onclick: () => {
+          const preset = PRESET_BY_ID[editor.settings.presetId];
+          downloadDataUrl(
+            exportPreset(editor.getImage(), event, editor.settings, preset.id),
+            `${fileBase(event)}-${preset.id}.png`,
+          );
+        },
+      }, 'Lataa tämä koko'),
+      h('button', {
+        class: 'btn btn-sm',
+        onclick: async () => {
+          const image = editor.getImage();
+          for (const presetId of EXPORT_SET) {
+            downloadDataUrl(exportPreset(image, event, editor.settings, presetId), `${fileBase(event)}-${presetId}.png`);
+            await new Promise((resolve) => { setTimeout(resolve, 350); });
+          }
+          toast(`${EXPORT_SET.length} kuvakokoa ladattu.`);
+        },
+      }, 'Lataa kaikki koot')),
+    h('label', { class: 'step-note' }, 'Vaihda kuva:'),
+    input);
 }
 
 function generateStep(event, step) {
@@ -378,6 +552,8 @@ function channelStep(event, step) {
     },
   }, text);
 
+  const preset = step.imagePreset ? PRESET_BY_ID[step.imagePreset] : null;
+
   return h('div', { style: 'display:flex;flex-direction:column;gap:10px' },
     h('label', { class: 'step-note' }, COPY_LABELS[step.copyKey] || 'Teksti'),
     area,
@@ -388,10 +564,23 @@ function channelStep(event, step) {
         onclick: () => copyToClipboard(area.value),
       }, 'Kopioi teksti'),
       step.url ? h('a', { class: 'btn btn-sm', href: step.url, target: '_blank', rel: 'noopener' }, step.urlLabel || 'Avaa kanava') : null,
-      event.image
-        ? h('a', {
-          class: 'btn btn-sm', href: `/uploads/${event.image.file}`, download: `${event.image.file}`,
-        }, 'Lataa kuva')
+      event.image && preset
+        ? h('button', {
+          class: 'btn btn-sm',
+          title: `${preset.w} × ${preset.h} px — ${preset.note}`,
+          onclick: async () => {
+            try {
+              const image = await eventImage(event);
+              downloadDataUrl(
+                exportPreset(image, event, posterSettings(event), preset.id),
+                `${fileBase(event)}-${step.id}.png`,
+              );
+              toast(`Kuva ladattu koossa ${preset.w} × ${preset.h}.`);
+            } catch (err) {
+              toast(err.message, true);
+            }
+          },
+        }, `Lataa kuva ${preset.ratio}`)
         : null,
       ...(step.extraLinks || []).map((link) =>
         h('a', { class: 'btn btn-sm btn-ghost', href: link.url, target: '_blank', rel: 'noopener' }, link.label)),
@@ -412,52 +601,36 @@ function calendarStep(event) {
 }
 
 function posterStep(event) {
-  const canvas = h('canvas', { class: 'poster-canvas' });
-  const opts = state.posterOptions;
-
-  const draw = async () => {
-    try {
-      const image = event.image ? await loadImage(`/uploads/${event.image.file}?t=${event.updatedAt}`) : null;
-      renderPoster(canvas, image, event, opts);
-    } catch (err) {
-      toast(err.message, true);
-    }
-  };
-
-  const aspectSelect = h('select', {
-    onchange: (e) => { opts.aspect = e.target.value; draw(); },
-  }, ...Object.entries(ASPECTS).map(([key, value]) =>
-    h('option', { value: key, selected: opts.aspect === key }, value.label)));
-
-  const accentInput = h('input', {
-    type: 'color', value: opts.accent, style: 'padding:2px;height:38px',
-    oninput: (e) => { opts.accent = e.target.value; draw(); },
-  });
-
-  const extraInput = h('input', {
-    placeholder: 'Lisäteksti julisteeseen (esim. “Liput ovelta”)', value: opts.extra,
-    oninput: (e) => { opts.extra = e.target.value; draw(); },
-  });
-
-  draw();
+  const editor = cropEditor(event, { withText: true });
 
   return h('div', { style: 'display:flex;flex-direction:column;gap:10px' },
-    canvas,
-    h('div', { class: 'poster-controls' }, aspectSelect, accentInput),
-    extraInput,
+    editor.node,
     h('div', { class: 'step-actions' },
       h('button', {
         class: 'btn btn-sm btn-primary',
         onclick: () => {
-          const link = document.createElement('a');
-          link.download = `${(eventTitle(event) || 'juliste').replace(/[^\w\-]+/g, '-').toLowerCase()}.png`;
-          link.href = canvas.toDataURL('image/png');
-          link.click();
+          const preset = PRESET_BY_ID[editor.settings.presetId];
+          downloadDataUrl(
+            exportPreset(editor.getImage(), event, editor.settings, preset.id),
+            `${fileBase(event)}-juliste-${preset.id}.png`,
+          );
         },
-      }, 'Lataa juliste (PNG)'),
-    ),
-    event.image ? null : h('p', { class: 'step-note' }, 'Ilman kuvaa juliste piirtyy tummalle taustalle.'),
-  );
+      }, 'Lataa juliste'),
+      h('button', {
+        class: 'btn btn-sm',
+        onclick: async () => {
+          const image = editor.getImage();
+          for (const presetId of EXPORT_SET) {
+            downloadDataUrl(
+              exportPreset(image, event, editor.settings, presetId),
+              `${fileBase(event)}-juliste-${presetId}.png`,
+            );
+            await new Promise((resolve) => { setTimeout(resolve, 350); });
+          }
+          toast(`${EXPORT_SET.length} julistekokoa ladattu.`);
+        },
+      }, 'Lataa kaikki koot')),
+    event.image ? null : h('p', { class: 'step-note' }, 'Ilman kuvaa juliste piirtyy tummalle taustalle.'));
 }
 
 function stepCard(event, step) {

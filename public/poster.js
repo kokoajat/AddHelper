@@ -1,19 +1,83 @@
 /**
- * Feelment-vaihe: piirtää tapahtuman tiedot kuvan päälle selaimessa.
- * Ei palvelinkäsittelyä — canvas riittää, ja tulos ladataan suoraan PNG:nä.
+ * Feelment-vaihe: kevyt kuvaeditori, joka rajaa kuvan kanavan vaatimaan
+ * kuvasuhteeseen ja piirtää tapahtuman tiedot päälle. Kaikki selaimessa.
+ *
+ * Rajaus tallennetaan polttopisteenä (fx, fy) ja zoomina, ei pikseleinä.
+ * Siksi sama rajaus siirtyy sellaisenaan kuvasuhteesta toiseen: kun keskität
+ * artistin kasvot kerran, hän pysyy kuvassa myös tarina- ja vaakakoossa.
  */
 
 import { artistList, priceLabel, shortDate, timeRange } from './shared/format.js';
 
-export const ASPECTS = {
-  alkuperainen: { label: 'Alkuperäinen', ratio: null },
-  neliö: { label: 'Neliö 1:1 (IG)', ratio: 1 },
-  pysty: { label: 'Pysty 4:5 (IG)', ratio: 4 / 5 },
-  tarina: { label: 'Tarina 9:16', ratio: 9 / 16 },
-  vaaka: { label: 'Vaaka 16:9 (FB)', ratio: 16 / 9 },
-};
+/** Kanavien yleisimmät julkaisukoot. Alustat päivittävät näitä ajoittain. */
+export const PRESETS = [
+  { id: 'ig-square', label: 'Instagram – neliö', channel: 'Instagram', w: 1080, h: 1080, ratio: '1:1', note: 'Perinteinen syötekuva.' },
+  { id: 'ig-portrait', label: 'Instagram – pysty', channel: 'Instagram', w: 1080, h: 1350, ratio: '4:5', note: 'Vie eniten tilaa syötteessä.' },
+  { id: 'story', label: 'Tarina / Reels', channel: 'Instagram & Facebook', w: 1080, h: 1920, ratio: '9:16', note: 'Koko ruudun pystykuva.' },
+  { id: 'fb-event', label: 'Facebook-tapahtuman kansi', channel: 'Facebook', w: 1200, h: 628, ratio: '1.91:1', note: 'Tapahtuman kansikuva.' },
+  { id: 'fb-post', label: 'Facebook – jaettava kuva', channel: 'Facebook', w: 1200, h: 900, ratio: '4:3', note: 'Julkaisun kuva ja verkkosivu.' },
+  { id: 'tiktok', label: 'TikTok', channel: 'TikTok', w: 1080, h: 1920, ratio: '9:16', note: 'Koko ruudun pystyvideo.' },
+  { id: 'yt-thumb', label: 'YouTube – pikkukuva', channel: 'YouTube', w: 1280, h: 720, ratio: '16:9', note: 'Lähetyksen pikkukuva.' },
+];
 
-const MAX_WIDTH = 1600;
+export const PRESET_BY_ID = Object.fromEntries(PRESETS.map((p) => [p.id, p]));
+
+/** Koot, jotka "Lataa kaikki koot" tuottaa yhdellä klikkauksella. */
+export const EXPORT_SET = ['ig-portrait', 'ig-square', 'story', 'fb-event'];
+
+export const TEXT_POSITIONS = { ala: 'Teksti alas', yla: 'Teksti ylös', pois: 'Ei tekstiä' };
+
+export function defaultSettings() {
+  return {
+    presetId: 'ig-portrait',
+    zoom: 1,        // 1 = kuva täyttää rajauksen juuri ja juuri
+    fx: 0.5,        // polttopiste vaakasuunnassa, 0–1 kuvan leveydestä
+    fy: 0.5,        // polttopiste pystysuunnassa
+    fit: 'tayta',   // 'tayta' = rajaa reunoista | 'sovita' = koko kuva näkyviin
+    text: 'ala',
+    accent: '#f2a541',
+    extra: '',
+    showPrice: true,
+  };
+}
+
+export function normalizeSettings(saved) {
+  const base = defaultSettings();
+  if (!saved || typeof saved !== 'object') return base;
+  const merged = { ...base, ...saved };
+  if (!PRESET_BY_ID[merged.presetId]) merged.presetId = base.presetId;
+  merged.zoom = clamp(Number(merged.zoom) || 1, 1, 4);
+  merged.fx = clamp(Number(merged.fx) ?? 0.5, 0, 1);
+  merged.fy = clamp(Number(merged.fy) ?? 0.5, 0, 1);
+  return merged;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * Lähdekuvan rajattava alue. Zoom 1 = pienin alue joka vielä täyttää
+ * kohdesuhteen; suurempi zoom rajaa tiukemmin polttopisteen ympäriltä.
+ */
+export function sourceRect(image, targetRatio, settings) {
+  const imageRatio = image.width / image.height;
+  let sw;
+  let sh;
+  if (imageRatio > targetRatio) {
+    sh = image.height;
+    sw = sh * targetRatio;
+  } else {
+    sw = image.width;
+    sh = sw / targetRatio;
+  }
+  sw /= settings.zoom;
+  sh /= settings.zoom;
+
+  const sx = clamp(settings.fx * image.width - sw / 2, 0, Math.max(0, image.width - sw));
+  const sy = clamp(settings.fy * image.height - sh / 2, 0, Math.max(0, image.height - sh));
+  return { sx, sy, sw, sh };
+}
 
 function fitText(ctx, text, maxWidth, startSize, weight, family) {
   let size = startSize;
@@ -42,110 +106,124 @@ function wrap(ctx, text, maxWidth) {
   return lines;
 }
 
-/** Rajaa lähdekuvan halutun kuvasuhteen mukaan (cover). */
-function coverRect(image, ratio) {
-  if (!ratio) return { sx: 0, sy: 0, sw: image.width, sh: image.height, w: image.width, h: image.height };
-  const target = ratio;
-  const source = image.width / image.height;
-  if (source > target) {
-    const sw = image.height * target;
-    return { sx: (image.width - sw) / 2, sy: 0, sw, sh: image.height, w: sw, h: image.height };
-  }
-  const sh = image.width / target;
-  return { sx: 0, sy: (image.height - sh) / 2, sw: image.width, sh, w: image.width, h: sh };
-}
-
-/**
- * @param {HTMLCanvasElement} canvas
- * @param {HTMLImageElement|null} image  null = pelkkä tumma tausta
- * @param {object} event
- * @param {{aspect?: string, accent?: string, extra?: string, showPrice?: boolean}} options
- */
-export function renderPoster(canvas, image, event, options = {}) {
-  const { aspect = 'alkuperainen', accent = '#f2a541', extra = '', showPrice = true } = options;
-  const ratio = ASPECTS[aspect]?.ratio ?? null;
-
-  let width;
-  let height;
-  let rect = null;
-
-  if (image) {
-    rect = coverRect(image, ratio);
-    const scale = Math.min(1, MAX_WIDTH / rect.w);
-    width = Math.round(rect.w * scale);
-    height = Math.round(rect.h * scale);
-  } else {
-    width = 1080;
-    height = ratio ? Math.round(1080 / ratio) : 1080;
-  }
-
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  const family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
-
+function drawBackground(ctx, image, width, height, settings, ratio) {
   ctx.fillStyle = '#12151c';
   ctx.fillRect(0, 0, width, height);
-  if (image && rect) {
-    ctx.drawImage(image, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, width, height);
+  if (!image) return;
+
+  if (settings.fit === 'sovita') {
+    // Koko kuva näkyviin: taustalle sumennettu venytys, jotta reunat eivät ammota tyhjinä.
+    ctx.save();
+    ctx.filter = 'blur(40px) brightness(0.6)';
+    const cover = sourceRect(image, ratio, { ...settings, zoom: 1 });
+    ctx.drawImage(image, cover.sx, cover.sy, cover.sw, cover.sh, -width * 0.05, -height * 0.05, width * 1.1, height * 1.1);
+    ctx.restore();
+
+    const scale = Math.min(width / image.width, height / image.height) * settings.zoom;
+    const dw = image.width * scale;
+    const dh = image.height * scale;
+    ctx.drawImage(image, (width - dw) / 2, (height - dh) / 2, dw, dh);
+    return;
   }
 
-  // Tummennus alareunaan, jotta teksti erottuu kuvasta.
-  const fade = ctx.createLinearGradient(0, height * 0.32, 0, height);
-  fade.addColorStop(0, 'rgba(8, 10, 15, 0)');
-  fade.addColorStop(0.55, 'rgba(8, 10, 15, 0.72)');
-  fade.addColorStop(1, 'rgba(8, 10, 15, 0.95)');
+  const rect = sourceRect(image, ratio, settings);
+  ctx.drawImage(image, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, width, height);
+}
+
+function drawOverlay(ctx, event, width, height, settings) {
+  if (settings.text === 'pois') return;
+  const family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  const top = settings.text === 'yla';
+
+  const fade = ctx.createLinearGradient(0, top ? 0 : height, 0, top ? height * 0.62 : height * 0.34);
+  fade.addColorStop(0, 'rgba(8, 10, 15, 0.95)');
+  fade.addColorStop(0.5, 'rgba(8, 10, 15, 0.7)');
+  fade.addColorStop(1, 'rgba(8, 10, 15, 0)');
   ctx.fillStyle = fade;
-  ctx.fillRect(0, height * 0.32, width, height * 0.68);
+  ctx.fillRect(0, top ? 0 : height * 0.34, width, top ? height * 0.62 : height * 0.66);
 
   const pad = Math.round(width * 0.06);
   const maxWidth = width - pad * 2;
-  let y = height - pad;
-
-  const lines = [];
 
   const dateLine = [shortDate(event.date), timeRange(event) && `klo ${timeRange(event)}`].filter(Boolean).join(' · ');
-  const placeLine = [event.venue, showPrice && priceLabel(event)].filter(Boolean).join(' · ');
-  const footer = [placeLine, extra].filter(Boolean).join('  ·  ');
-
-  if (footer) lines.push({ text: footer, size: Math.round(width * 0.032), weight: 500, color: 'rgba(255,255,255,0.82)' });
-  if (dateLine) lines.push({ text: dateLine, size: Math.round(width * 0.042), weight: 700, color: accent });
-
+  const footer = [event.venue, settings.showPrice && priceLabel(event), settings.extra]
+    .filter(Boolean).join('  ·  ');
   const artists = artistList(event.artists);
-  if (artists && artists !== event.title) {
-    lines.push({ text: artists, size: Math.round(width * 0.05), weight: 600, color: 'rgba(255,255,255,0.92)' });
-  }
-
   const title = event.title || event.type;
-  lines.push({ text: title, size: Math.round(width * 0.085), weight: 800, color: '#ffffff', wrap: true });
 
-  // Piirretään alhaalta ylös, jotta otsikko asettuu muun tekstin päälle.
-  ctx.textBaseline = 'alphabetic';
-  for (const line of lines) {
-    if (line.wrap) {
-      const size = fitText(ctx, line.text, maxWidth, line.size, line.weight, family);
-      ctx.font = `${line.weight} ${size}px ${family}`;
-      const wrapped = wrap(ctx, line.text, maxWidth);
-      for (let i = wrapped.length - 1; i >= 0; i -= 1) {
-        ctx.fillStyle = line.color;
-        ctx.fillText(wrapped[i], pad, y);
-        y -= size * 1.08;
-      }
-      y -= size * 0.1;
-    } else {
-      const size = fitText(ctx, line.text, maxWidth, line.size, line.weight, family);
-      ctx.font = `${line.weight} ${size}px ${family}`;
-      ctx.fillStyle = line.color;
-      ctx.fillText(line.text, pad, y);
-      y -= size * 1.5;
-    }
+  // Rivit alhaalta ylös; otsikko piirtyy viimeisenä muiden päälle.
+  const rows = [];
+  if (footer) rows.push({ text: footer, size: width * 0.032, weight: 500, color: 'rgba(255,255,255,0.82)' });
+  if (dateLine) rows.push({ text: dateLine, size: width * 0.042, weight: 700, color: settings.accent });
+  if (artists && artists !== title) {
+    rows.push({ text: artists, size: width * 0.05, weight: 600, color: 'rgba(255,255,255,0.92)' });
+  }
+  rows.push({ text: title, size: width * 0.085, weight: 800, color: '#ffffff', wrap: true });
+
+  let y = top ? 0 : height - pad;
+  const measured = [];
+
+  for (const row of rows) {
+    const size = fitText(ctx, row.text, maxWidth, Math.round(row.size), row.weight, family);
+    const lines = row.wrap ? wrap(ctx, row.text, maxWidth) : [row.text];
+    measured.push({ ...row, size, lines });
   }
 
-  // Aksenttiviiva otsikon yläpuolelle.
-  ctx.fillStyle = accent;
-  ctx.fillRect(pad, Math.max(y - 6, pad), Math.round(width * 0.12), Math.max(4, Math.round(width * 0.006)));
+  if (top) {
+    // Ylhäällä sama sisältö käännetään oikeaan lukujärjestykseen.
+    y = pad;
+    for (const row of [...measured].reverse()) {
+      ctx.font = `${row.weight} ${row.size}px ${family}`;
+      ctx.fillStyle = row.color;
+      for (const line of row.lines) {
+        y += row.size;
+        ctx.fillText(line, pad, y);
+        y += row.size * (row.wrap ? 0.08 : 0.5);
+      }
+    }
+    ctx.fillStyle = settings.accent;
+    ctx.fillRect(pad, y + Math.round(width * 0.02), Math.round(width * 0.12), Math.max(4, Math.round(width * 0.006)));
+    return;
+  }
 
+  for (const row of measured) {
+    ctx.font = `${row.weight} ${row.size}px ${family}`;
+    ctx.fillStyle = row.color;
+    for (let i = row.lines.length - 1; i >= 0; i -= 1) {
+      ctx.fillText(row.lines[i], pad, y);
+      y -= row.size * (row.wrap ? 1.08 : 1.5);
+    }
+    if (row.wrap) y -= row.size * 0.1;
+  }
+  ctx.fillStyle = settings.accent;
+  ctx.fillRect(pad, Math.max(y + Math.round(width * 0.02), pad), Math.round(width * 0.12), Math.max(4, Math.round(width * 0.006)));
+}
+
+/**
+ * Piirtää julisteen canvasille kanavan täydessä koossa.
+ * @param {HTMLCanvasElement} canvas
+ * @param {HTMLImageElement|null} image
+ * @param {object} event
+ * @param {object} settings
+ * @param {string} [presetId] ohittaa settings.presetId (vientiä varten)
+ */
+export function renderPoster(canvas, image, event, settings, presetId) {
+  const preset = PRESET_BY_ID[presetId || settings.presetId] || PRESET_BY_ID['ig-portrait'];
+  canvas.width = preset.w;
+  canvas.height = preset.h;
+
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  drawBackground(ctx, image, preset.w, preset.h, settings, preset.w / preset.h);
+  drawOverlay(ctx, event, preset.w, preset.h, settings);
   return canvas;
+}
+
+/** Piirtää yhden koon irralliselle canvasille ja palauttaa data-URL:n. */
+export function exportPreset(image, event, settings, presetId) {
+  const canvas = document.createElement('canvas');
+  renderPoster(canvas, image, event, settings, presetId);
+  return canvas.toDataURL('image/png');
 }
 
 export function loadImage(src) {
@@ -156,4 +234,74 @@ export function loadImage(src) {
     img.onerror = () => reject(new Error('Kuvan lataus epäonnistui.'));
     img.src = src;
   });
+}
+
+/**
+ * Kytkee hiiri- ja kosketusraahauksen sekä rullazoomin canvasiin.
+ * @returns {() => void} irrotusfunktio
+ */
+export function attachCropControls(canvas, getState, onChange) {
+  let dragging = false;
+  let lastX = 0;
+  let lastY = 0;
+
+  const onDown = (e) => {
+    const { settings } = getState();
+    if (settings.fit === 'sovita') return; // sovitetussa tilassa ei ole mitä siirtää
+    dragging = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+    canvas.style.cursor = 'grabbing';
+  };
+
+  const onMove = (e) => {
+    if (!dragging) return;
+    const { image, settings } = getState();
+    if (!image) return;
+    const preset = PRESET_BY_ID[settings.presetId];
+    const rect = sourceRect(image, preset.w / preset.h, settings);
+    const box = canvas.getBoundingClientRect();
+
+    // Näytön pikselisiirto muunnetaan lähdekuvan koordinaatistoon.
+    const dx = ((e.clientX - lastX) / box.width) * rect.sw / image.width;
+    const dy = ((e.clientY - lastY) / box.height) * rect.sh / image.height;
+    lastX = e.clientX;
+    lastY = e.clientY;
+
+    onChange({ fx: clamp(settings.fx - dx, 0, 1), fy: clamp(settings.fy - dy, 0, 1) }, false);
+  };
+
+  const onUp = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    canvas.releasePointerCapture?.(e.pointerId);
+    canvas.style.cursor = 'grab';
+    onChange({}, true); // tallennus vasta kun raahaus päättyy
+  };
+
+  const onWheel = (e) => {
+    e.preventDefault();
+    const { settings } = getState();
+    const zoom = clamp(settings.zoom * (1 - e.deltaY * 0.0015), 1, 4);
+    onChange({ zoom }, false);
+    clearTimeout(onWheel.timer);
+    onWheel.timer = setTimeout(() => onChange({}, true), 400);
+  };
+
+  canvas.style.cursor = 'grab';
+  canvas.style.touchAction = 'none';
+  canvas.addEventListener('pointerdown', onDown);
+  canvas.addEventListener('pointermove', onMove);
+  canvas.addEventListener('pointerup', onUp);
+  canvas.addEventListener('pointercancel', onUp);
+  canvas.addEventListener('wheel', onWheel, { passive: false });
+
+  return () => {
+    canvas.removeEventListener('pointerdown', onDown);
+    canvas.removeEventListener('pointermove', onMove);
+    canvas.removeEventListener('pointerup', onUp);
+    canvas.removeEventListener('pointercancel', onUp);
+    canvas.removeEventListener('wheel', onWheel);
+  };
 }

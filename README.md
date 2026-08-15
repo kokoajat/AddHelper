@@ -74,16 +74,42 @@ odottaa kuvaa, paina *Ohita* — seuraava vaihe aukeaa heti.
 | Vaihe | Toiminto |
 | ----- | -------- |
 | **Tapahtuma** | Päivämäärä, kellonajat, esiintyjät, paikka, liput, ikäraja, livestream-valinta |
-| **Kuva / Video** | Kuvan lataus (PNG, JPG, WebP, GIF, enintään 10 Mt) |
+| **Kuva / Video** | Kuvan lataus + rajaustyökalu: raahaa, lähennä ja valitse kanavan koko |
 | **Some-teksti** | Kirjoittaa jokaiselle kanavalle oman tekstin — ei samaa tekstiä kopioituna |
 | **Facebook-tapahtuma** | Kopioi kuvaus, avaa tapahtuman luonti, linkki Salon puskaradio -ryhmään |
 | **TikTok** | Lyhyt koukkuteksti, muistutus julkaisusta tapahtumapäivänä |
 | **Cluby / Instagram / Webador** | Kanavakohtainen teksti, kuvan lataus, suora linkki palveluun |
 | **Google-kalenteri** | Valmiiksi täytetty kalenterilomake tai `.ics`-tiedosto |
-| **Feelment** | Piirtää tapahtuman tiedot kuvan päälle ja lataa julisteen PNG:nä (1:1, 4:5, 9:16, 16:9) |
+| **Feelment** | Sama rajaus + tapahtuman tiedot kuvan päälle, tekstin asettelu ja korostusväri |
 | **Video-introt / YouTube** | Ruututekstit ja juonto lähetykseen sekä lähetyksen kuvaus |
 
 Kaikki tekstit ovat muokattavissa suoraan kortissa. Muokkaus tallentuu kun siirryt pois kentästä.
+
+## Kuvan rajaus
+
+Facebook ja Instagram hyväksyvät vain tietyt kuvasuhteet, ja lähdekuvat ovat harvoin niiden
+muotoisia. Rajaustyökalu aukeaa heti kuvan latauksen jälkeen kuvavaiheessa.
+
+Rajaus tallennetaan **polttopisteenä ja lähennyksenä**, ei pikseleinä. Siksi sama rajaus siirtyy
+kuvasuhteesta toiseen: kun keskität artistin kasvot kerran, hän pysyy kuvassa myös pystykuvassa,
+tarinassa ja Facebookin vaakakannessa. Jokaisen kanavan kortissa on *Lataa kuva* -nappi, joka
+tuottaa juuri sen kanavan koon samasta rajauksesta.
+
+| Koko | Pikselit | Käyttö |
+| ---- | -------- | ------ |
+| Instagram – pysty | 1080 × 1350 | 4:5, vie eniten tilaa syötteessä |
+| Instagram – neliö | 1080 × 1080 | 1:1 |
+| Tarina / Reels | 1080 × 1920 | 9:16, myös TikTok |
+| Facebook-tapahtuman kansi | 1200 × 628 | ≈1.91:1 |
+| Facebook – jaettava kuva | 1200 × 900 | 4:3, myös Webador |
+| YouTube – pikkukuva | 1280 × 720 | 16:9 |
+
+Säätimet: **Koko** valitsee kuvasuhteen, **Rajaus** joko rajaa reunoista tai sovittaa koko kuvan
+sumennetulle taustalle, **Lähennys** zoomaa, ja kuvaa raahataan hiirellä. *Lataa kaikki koot*
+tuottaa neljä yleisintä kokoa kerralla — selain kysyy luvan usean tiedoston lataamiseen.
+
+Koot ovat alustojen yleisimmät julkaisukoot. Alustat päivittävät niitä ajoittain; jos jokin muuttuu,
+listan voi korjata tiedostosta `public/poster.js`.
 
 ## Puskaradio-keskiviikko
 

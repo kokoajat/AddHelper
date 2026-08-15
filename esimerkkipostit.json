@@ -1,0 +1,37 @@
+[
+  {
+    "id": "msg-1",
+    "date": "2026-08-10T09:12:00Z",
+    "from": "Hanski Trio <hanski@example.com>",
+    "subject": "Vahvistus: keikka 25.9.2026",
+    "body": "Moi!\n\nHienoa että saatiin sovittua. Vahvistetaan siis Hanski Trio perjantaina 25.9.2026 klo 21:00-23:30. Soundcheck 19:00. Palkkio 450 e + alv, laskutamme jälkikäteen. Meitä on kolme, tarvitaan kolme mikkiä ja monitorit.\n\nT. Hanski"
+  },
+  {
+    "id": "msg-2",
+    "date": "2026-08-11T14:02:00Z",
+    "from": "DJ Salo <dj@example.com>",
+    "subject": "Olisiko tilaa joskus syksyllä?",
+    "body": "Terve, olisikohan teillä tilaa jollekin illalle loka-marraskuussa? Ei mitään kiirettä, kysellään vaan alustavasti. Palataan asiaan."
+  },
+  {
+    "id": "msg-3",
+    "date": "2026-08-12T08:30:00Z",
+    "from": "Sähkötukku Oy <laskutus@example.com>",
+    "subject": "Lasku 88213 eräpäivä 30.8.2026",
+    "body": "Liitteenä lasku numero 88213. Eräpäivä 30.8.2026. Summa 214,50 euroa."
+  },
+  {
+    "id": "msg-4",
+    "date": "2026-08-13T17:45:00Z",
+    "from": "Karaoke-Kalle <kalle@example.com>",
+    "subject": "Re: Karaokeilta lauantaina",
+    "body": "Sovittu! Ollaan paikalla lauantaina 3.10.2026, aloitetaan 20:00 ja mennään kahteen asti. Laitteet tuon itse. Ovimaksu 5 euroa niin kuin viimeksikin.\n\n> Sopisiko teille lokakuun alku?"
+  },
+  {
+    "id": "msg-5",
+    "date": "2026-08-14T11:00:00Z",
+    "from": "Uutiskirje <no-reply@example.com>",
+    "subject": "Syksyn parhaat tarjoukset ravintoloille!",
+    "body": "Tutustu syksyn tarjouksiin: astiat -20%, tuolit -15%. Tarjous voimassa 30.9.2026 asti."
+  }
+]

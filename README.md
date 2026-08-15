@@ -51,6 +51,11 @@ epäonnistuu, alusta putoaa automaattisesti mallipohjiin ja kertoo syyn — työ
 | `ADDHELPER_MODEL`   | `claude-opus-5`   | Käytettävä malli                           |
 | `PORT`              | `4173`            | Palvelimen portti                          |
 | `ADDHELPER_DATA`    | `./data`          | Tallennuskansio                            |
+| `GMAIL_USER`        | —                 | Gmail-osoite keikkapostien lukuun          |
+| `GMAIL_APP_PASSWORD`| —                 | Google-tilin sovellussalasana              |
+| `GMAIL_MAILBOX`     | `INBOX`           | Luettava kansio tai tunniste               |
+| `GMAIL_SEARCH`      | —                 | Hakusana, joka rajaa luettavat viestit     |
+| `GMAIL_DAYS`        | `60`              | Kuinka monta päivää taaksepäin             |
 
 ## Työnkulku
 
@@ -128,6 +133,62 @@ Korostusväri on säädettävissä Feelment-vaiheessa ja vaikuttaa kaikkiin pohj
 Koot ovat alustojen yleisimmät julkaisukoot. Alustat päivittävät niitä ajoittain; jos jokin muuttuu,
 listan voi korjata tiedostosta `public/poster.js`.
 
+## Gmail-yhteys: keikat sähköposteista
+
+AddHelper voi lukea baarin sähköpostit ja poimia niistä sovitut keikat. Claude lukee viestit ja
+palauttaa ehdotukset, jotka **et hyväksy automaattisesti** — ne ilmestyvät hyväksyntälistalle,
+josta luot tapahtuman tai hylkäät ehdotuksen. Jokaisessa ehdotuksessa näkyy lainaus siitä
+kohdasta viestiä, johon päätelmä perustuu.
+
+### Käyttöönotto
+
+Tarvitset Google-tilin **sovellussalasanan** — tavallinen salasana ei kelpaa IMAPiin:
+
+1. Ota 2-vaiheinen vahvistus käyttöön Google-tilillä (pakollinen ehto sovellussalasanalle).
+2. Google-tili → Turvallisuus → 2-vaiheinen vahvistus → **Sovellussalasanat** → luo uusi.
+3. Lisää `.env`-tiedostoon:
+
+```
+GMAIL_USER=baari@gmail.com
+GMAIL_APP_PASSWORD=xxxxxxxxxxxxxxxx
+GMAIL_SEARCH=keikka
+```
+
+Käynnistä palvelin uudelleen ja paina sivupalkista *Testaa yhteys*, sitten
+*Hae keikat sähköposteista*.
+
+### Mitä lähetetään ja minne
+
+Haku rajataan kolmella tavalla: **kansio** (`GMAIL_MAILBOX`, oletus INBOX), **aikaväli**
+(`GMAIL_DAYS`, oletus 60 päivää) ja **hakusana** (`GMAIL_SEARCH`). Viestistä otetaan mukaan vain
+lähettäjä, aihe ja tekstin alku (enintään 4000 merkkiä); liitteitä ei ladata eikä lainattuja
+vastausketjuja lähetetä.
+
+Nämä viestit lähetetään Anthropicin rajapintaan analysoitavaksi. Jos baarin sähköposteissa on
+tietoa, jonka et halua kulkevan sinne, käytä `GMAIL_MAILBOX`-asetusta ja siirrä keikkaviestit
+omaan Gmail-tunnisteeseensa — silloin muut viestit eivät koskaan päädy hakuun.
+
+Sovellussalasana antaa pääsyn koko postilaatikkoon, vaikka AddHelper vain lukee. Voit perua sen
+milloin tahansa Google-tilin asetuksista. Tiukempi vaihtoehto olisi Gmail API:n lukuoikeus, joka
+vaatii Google Cloud -projektin — sen voi lisätä myöhemmin.
+
+### Ilman Gmail-tunnuksia
+
+Voit kokeilla koko ketjun JSON-tiedostolla:
+
+```
+ADDHELPER_MAIL_FIXTURE=./esimerkkipostit.json
+```
+
+Tiedosto on lista viestejä: `[{ "id", "date", "from", "subject", "body" }]`.
+
+### Ilman API-avainta
+
+Ilman `ANTHROPIC_API_KEY`:tä käytetään karkeaa hakupoimintaa: viestistä etsitään päivämäärä ja
+keikkaan viittaavia sanoja. Se löytää selvät tapaukset mutta ohittaa vivahteet — laskut ja
+uutiskirjeet karsiutuvat, mutta esimerkiksi kellonaika jää usein tyhjäksi. Claude-poiminta on
+selvästi tarkempi.
+
 ## Puskaradio-keskiviikko
 
 Sivupalkki näyttää seuraavan keskiviikon ja listaa lähipäivien tapahtumat, joiden
@@ -143,6 +204,8 @@ server.js                 HTTP-palvelin ja REST-rajapinta
 src/store.js              JSON-tallennus
 src/copy.js               Mallipohjaiset tekstit
 src/ai.js                 Tekstigenerointi Claudella
+src/mail.js               Gmail-luku IMAPin yli
+src/extract.js            Keikkaehdotusten poiminta viesteistä
 public/index.html         Käyttöliittymä
 public/app.js             Näkymälogiikka
 public/poster.js          Rajaus, julistepohjat ja vienti (canvas)
@@ -166,6 +229,11 @@ public/shared/            Palvelimen ja selaimen yhteinen koodi
 | `POST /api/events/:id/image` | Kuvan lataus data-URL:na |
 | `GET /api/events/:id/calendar.ics` | Yhden tapahtuman kalenteritiedosto |
 | `GET /api/calendar.ics` | Kaikki tapahtumat |
+| `POST /api/mail/test` | Testaa Gmail-yhteys |
+| `POST /api/mail/scan` | Lue viestit ja poimi ehdotukset |
+| `GET /api/proposals` | Ehdotukset |
+| `POST /api/proposals/:id/accept` | Luo tapahtuma ehdotuksesta |
+| `POST /api/proposals/:id/reject` | Hylkää ehdotus |
 
 ## Huomioitavaa
 

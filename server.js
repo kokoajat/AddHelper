@@ -11,13 +11,19 @@ import { fileURLToPath } from 'node:url';
 
 import { aiConfigured, generateCopy, keyFormatWarning } from './src/ai.js';
 import { buildTemplateCopy } from './src/copy.js';
+import { extractProposals } from './src/extract.js';
+import { fetchMessages, mailConfigured, mailErrorMessage, mailSettings, testConnection } from './src/mail.js';
 import {
   UPLOAD_DIR,
   createEvent,
   deleteEvent,
+  deleteProposal,
   getEvent,
   listEvents,
+  listProposals,
+  mergeProposals,
   saveImage,
+  setProposalStatus,
   setStep,
   updateEvent,
 } from './src/store.js';
@@ -114,7 +120,84 @@ async function handleApi(req, res, url) {
       aiConfigured: aiConfigured(),
       model: process.env.ADDHELPER_MODEL || 'claude-opus-5',
       keyWarning: keyFormatWarning(),
+      mailConfigured: mailConfigured(),
+      mail: mailSettings(),
     });
+  }
+
+  if (resource === 'mail') {
+    // /api/mail/test — yhteyden tarkistus ilman viestien hakua
+    if (id === 'test' && req.method === 'POST') {
+      return json(res, 200, await testConnection());
+    }
+    // /api/mail/scan — hae viestit ja poimi keikkaehdotukset
+    if (id === 'scan' && req.method === 'POST') {
+      if (!mailConfigured()) {
+        return json(res, 400, { error: 'Sähköpostia ei ole määritetty. Katso README: Gmail-yhteys.' });
+      }
+      let messages;
+      try {
+        messages = await fetchMessages();
+      } catch (err) {
+        return json(res, 502, { error: mailErrorMessage(err) });
+      }
+      const { proposals, source, warning } = await extractProposals(messages);
+
+      // Viestin aihe ja lähettäjä talteen, jotta ehdotuksen alkuperän näkee listalla.
+      const subjects = Object.fromEntries(messages.map((m) => [m.id, m.subject]));
+      const senders = Object.fromEntries(messages.map((m) => [m.id, m.from]));
+      const { added } = await mergeProposals(proposals, { source, subjects, senders });
+
+      return json(res, 200, {
+        scanned: messages.length,
+        found: proposals.length,
+        added,
+        source,
+        warning,
+        proposals: await listProposals(),
+      });
+    }
+    return json(res, 404, { error: 'Tuntematon rajapinta.' });
+  }
+
+  if (resource === 'proposals') {
+    if (!id && req.method === 'GET') return json(res, 200, await listProposals());
+
+    if (id && sub === 'accept' && req.method === 'POST') {
+      const proposals = await listProposals();
+      const proposal = proposals.find((p) => p.id === id);
+      if (!proposal) return json(res, 404, { error: 'Ehdotusta ei löydy.' });
+      const overrides = await readJson(req);
+
+      const event = await createEvent({
+        title: proposal.title,
+        date: proposal.date,
+        startTime: proposal.startTime,
+        endTime: proposal.endTime,
+        artists: proposal.artists,
+        venue: proposal.venue,
+        price: proposal.price,
+        description: [proposal.notes, proposal.evidence && `Sähköpostista: "${proposal.evidence}"`]
+          .filter(Boolean).join('\n\n'),
+        ...overrides,
+      });
+      await setProposalStatus(id, 'hyväksytty', event.id);
+      return json(res, 201, { event, proposals: await listProposals() });
+    }
+
+    if (id && sub === 'reject' && req.method === 'POST') {
+      const updated = await setProposalStatus(id, 'hylätty');
+      if (!updated) return json(res, 404, { error: 'Ehdotusta ei löydy.' });
+      return json(res, 200, { proposals: await listProposals() });
+    }
+
+    if (id && !sub && req.method === 'DELETE') {
+      const ok = await deleteProposal(id);
+      if (!ok) return json(res, 404, { error: 'Ehdotusta ei löydy.' });
+      return json(res, 200, { proposals: await listProposals() });
+    }
+
+    return json(res, 404, { error: 'Tuntematon rajapinta.' });
   }
 
   if (resource === 'calendar.ics' && req.method === 'GET') {
@@ -248,4 +331,7 @@ server.listen(PORT, () => {
     : '  AI-tekstigenerointi: pois (aseta ANTHROPIC_API_KEY) — mallipohjat käytössä');
   const warning = keyFormatWarning();
   if (warning) console.warn(`  ⚠️  ${warning}`);
+  console.log(mailConfigured()
+    ? `  Sähköpostihaku: käytössä${mailSettings().fixture ? ' (fixture)' : ` (${mailSettings().user})`}`
+    : '  Sähköpostihaku: pois (aseta GMAIL_USER ja GMAIL_APP_PASSWORD)');
 });

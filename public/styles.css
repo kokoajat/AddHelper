@@ -294,3 +294,32 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .week-item { padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }
 .week-item:last-child { border-bottom: none; }
 .week-item .when { color: var(--muted); font-size: 12.5px; }
+
+/* ---------- Sähköpostiehdotukset ---------- */
+
+.panel.proposals { border-color: rgba(242, 165, 65, 0.45); }
+
+.proposal {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface-2);
+}
+
+.proposal:last-child { margin-bottom: 0; }
+.proposal-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+
+.proposal-quote {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent);
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 0 8px 8px 0;
+  font-size: 13.5px;
+  color: var(--muted);
+  font-style: italic;
+}

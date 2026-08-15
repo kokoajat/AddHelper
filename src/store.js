@@ -134,3 +134,66 @@ export async function saveImage(id, buffer, extension) {
   await fs.writeFile(path.join(UPLOAD_DIR, file), buffer);
   return updateEvent(id, { image: { file, uploadedAt: new Date().toISOString() } });
 }
+
+/* ------------------------- sähköpostiehdotukset ------------------------- */
+
+function proposalKey(proposal) {
+  return `${proposal.messageId || ''}|${proposal.date || ''}`;
+}
+
+export async function listProposals() {
+  const db = await load();
+  if (!Array.isArray(db.proposals)) db.proposals = [];
+  return [...db.proposals].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+}
+
+/**
+ * Yhdistää uudet ehdotukset olemassa oleviin. Jo käsitellyt (hyväksytyt tai
+ * hylätyt) säilyvät ennallaan, jottei sama viesti nouse listalle uudelleen.
+ */
+export async function mergeProposals(found, meta = {}) {
+  const db = await load();
+  if (!Array.isArray(db.proposals)) db.proposals = [];
+  const existing = new Map(db.proposals.map((p) => [proposalKey(p), p]));
+
+  let added = 0;
+  for (const proposal of found) {
+    const key = proposalKey(proposal);
+    if (existing.has(key)) continue;
+    db.proposals.push({
+      ...proposal,
+      id: randomUUID(),
+      status: 'uusi',
+      source: meta.source || 'tuntematon',
+      subject: proposal.subject || meta.subjects?.[proposal.messageId] || '',
+      from: proposal.from || meta.senders?.[proposal.messageId] || '',
+      foundAt: new Date().toISOString(),
+      eventId: null,
+    });
+    added += 1;
+  }
+
+  await persist();
+  return { added, total: db.proposals.length };
+}
+
+export async function setProposalStatus(id, status, eventId = null) {
+  const db = await load();
+  const proposal = (db.proposals || []).find((p) => p.id === id);
+  if (!proposal) return null;
+  proposal.status = status;
+  proposal.eventId = eventId;
+  proposal.handledAt = new Date().toISOString();
+  await persist();
+  return proposal;
+}
+
+export async function deleteProposal(id) {
+  const db = await load();
+  if (!Array.isArray(db.proposals)) return false;
+  const index = db.proposals.findIndex((p) => p.id === id);
+  if (index === -1) return false;
+  db.proposals.splice(index, 1);
+  await persist();
+  return true;
+}

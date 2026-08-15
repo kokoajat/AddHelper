@@ -40,6 +40,7 @@ const LANES = {
 
 const state = {
   events: [],
+  proposals: [],
   selectedId: null,
   config: { aiConfigured: false },
   posterOptions: { aspect: 'neliö', accent: '#f2a541', extra: '', showPrice: true },
@@ -112,7 +113,9 @@ function eventTitle(event) {
 }
 
 async function refresh(keepSelection = true) {
-  state.events = await api('/events');
+  const [events, proposals] = await Promise.all([api('/events'), api('/proposals')]);
+  state.events = events;
+  state.proposals = proposals;
   if (!keepSelection || !state.events.some((e) => e.id === state.selectedId)) {
     const upcoming = state.events.find((e) => (daysUntil(e.date) ?? -1) >= 0);
     state.selectedId = (upcoming || state.events[0])?.id || null;
@@ -148,6 +151,46 @@ function renderSidebar() {
   }
 }
 
+function renderMailPanel() {
+  const panel = document.getElementById('mail-panel');
+  if (!state.config.mailConfigured) {
+    panel.replaceChildren(
+      h('h2', {}, 'Sähköposti'),
+      h('p', { class: 'empty' },
+        'Ei käytössä. Lisää GMAIL_USER ja GMAIL_APP_PASSWORD .env-tiedostoon, '
+        + 'niin AddHelper voi poimia sovitut keikat sähköposteista.'));
+    return;
+  }
+  const odottaa = state.proposals.filter((p) => p.status === 'uusi').length;
+  const mail = state.config.mail || {};
+  panel.replaceChildren(
+    h('h2', {}, 'Sähköposti'),
+    h('p', { class: 'empty' },
+      mail.fixture ? 'Fixture-tiedosto käytössä.' : `${mail.user} · ${mail.mailbox} · ${mail.days} pv`),
+    h('button', {
+      class: 'btn btn-sm btn-primary',
+      style: 'width:100%;justify-content:center;margin-top:8px',
+      onclick: (e) => scanMail(e.currentTarget),
+    }, 'Hae keikat sähköposteista'),
+    h('button', {
+      class: 'btn btn-sm btn-ghost',
+      style: 'width:100%;justify-content:center;margin-top:6px',
+      onclick: async (e) => {
+        e.currentTarget.disabled = true;
+        try {
+          const result = await api('/mail/test', { method: 'POST' });
+          toast(result.detail, !result.ok);
+        } catch (err) {
+          toast(err.message, true);
+        } finally {
+          e.currentTarget.disabled = false;
+        }
+      },
+    }, 'Testaa yhteys'),
+    odottaa ? h('p', { class: 'empty', style: 'margin-top:8px' }, `${odottaa} ehdotusta odottaa hyväksyntää.`) : null,
+  );
+}
+
 function renderWednesday() {
   const panel = document.getElementById('wednesday-panel');
   const wednesday = nextWednesday();
@@ -181,9 +224,22 @@ function closeModal() {
   document.getElementById('modal').hidden = true;
 }
 
-function eventForm(event) {
+function eventForm(event, { proposal = null } = {}) {
   const isNew = !event;
-  const data = event || { date: toISODate(new Date()), type: 'Keikka', artists: [] };
+  const data = event || (proposal
+    ? {
+      title: proposal.title || proposal.subject || '',
+      date: proposal.date || toISODate(new Date()),
+      startTime: proposal.startTime || '',
+      endTime: proposal.endTime || '',
+      artists: proposal.artists || [],
+      venue: proposal.venue || '',
+      price: proposal.price || '',
+      type: 'Keikka',
+      description: [proposal.notes, proposal.evidence && `Sähköpostista: ”${proposal.evidence}”`]
+        .filter(Boolean).join('\n\n'),
+    }
+    : { date: toISODate(new Date()), type: 'Keikka', artists: [] });
 
   const field = (name, label, attrs = {}) => h('div', { class: `field${attrs.full ? ' full' : ''}` },
     h('label', { for: `f-${name}` }, label),
@@ -240,13 +296,19 @@ function eventForm(event) {
     payload.artists = String(payload.artists || '').split(',').map((s) => s.trim()).filter(Boolean);
     payload.livestream = document.getElementById('f-livestream').checked;
     try {
-      const saved = isNew
-        ? await api('/events', { method: 'POST', body: payload })
-        : await api(`/events/${event.id}`, { method: 'PUT', body: payload });
+      let saved;
+      if (proposal) {
+        // Ehdotuksesta luotaessa palvelin merkitsee ehdotuksen samalla käsitellyksi.
+        ({ event: saved } = await api(`/proposals/${proposal.id}/accept`, { method: 'POST', body: payload }));
+      } else if (isNew) {
+        saved = await api('/events', { method: 'POST', body: payload });
+      } else {
+        saved = await api(`/events/${event.id}`, { method: 'PUT', body: payload });
+      }
       state.selectedId = saved.id;
       closeModal();
       await refresh();
-      toast(isNew ? 'Tapahtuma luotu.' : 'Tiedot tallennettu.');
+      toast(proposal ? 'Tapahtuma luotu ehdotuksesta.' : isNew ? 'Tapahtuma luotu.' : 'Tiedot tallennettu.');
     } catch (err) {
       toast(err.message, true);
     }
@@ -260,10 +322,79 @@ function eventForm(event) {
         : h('button', { class: 'btn btn-ghost btn-danger', onclick: () => submit(true) }, 'Poista tapahtuma'),
       h('div', { style: 'display:flex;gap:8px' },
         h('button', { class: 'btn btn-ghost', onclick: closeModal }, 'Peruuta'),
-        h('button', { class: 'btn btn-primary', onclick: () => submit(false) }, isNew ? 'Luo tapahtuma' : 'Tallenna'),
+        h('button', { class: 'btn btn-primary', onclick: () => submit(false) },
+          proposal ? 'Luo tapahtuma ehdotuksesta' : isNew ? 'Luo tapahtuma' : 'Tallenna'),
       ),
     ),
   );
+}
+
+/* --------------------------- sähköpostiehdotukset --------------------------- */
+
+const CONFIDENCE_CLASS = { varma: 'pill pill-ok', todennäköinen: 'pill pill-accent', epävarma: 'pill pill-muted' };
+
+async function scanMail(button) {
+  button.disabled = true;
+  const original = button.textContent;
+  button.textContent = 'Haetaan…';
+  try {
+    const result = await api('/mail/scan', { method: 'POST' });
+    await refresh();
+    if (result.warning) toast(`Hakupoiminta käytössä: ${result.warning}`, true);
+    else if (result.added) toast(`${result.scanned} viestiä luettu, ${result.added} uutta ehdotusta.`);
+    else toast(`${result.scanned} viestiä luettu, ei uusia ehdotuksia.`);
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+function proposalCard(proposal) {
+  const event = { ...proposal, type: 'Keikka' };
+  return h('article', { class: 'proposal' },
+    h('div', { class: 'proposal-head' },
+      h('div', {},
+        h('strong', {}, proposal.title || proposal.subject || 'Nimetön ehdotus'),
+        h('div', { class: 'step-note' },
+          [shortDate(proposal.date) || 'Ei päivää',
+            proposal.startTime && `klo ${proposal.startTime}`,
+            artistList(proposal.artists),
+            proposal.venue].filter(Boolean).join(' · '))),
+      h('span', { class: CONFIDENCE_CLASS[proposal.confidence] || 'pill pill-muted' }, proposal.confidence || '—')),
+    proposal.evidence
+      ? h('blockquote', { class: 'proposal-quote' }, `”${proposal.evidence}”`)
+      : null,
+    h('div', { class: 'step-note' },
+      [proposal.from && `Lähettäjä: ${proposal.from}`, proposal.subject && `Aihe: ${proposal.subject}`]
+        .filter(Boolean).join(' · ')),
+    h('div', { class: 'step-actions' },
+      h('button', {
+        class: 'btn btn-sm btn-primary',
+        onclick: () => openModal('Tarkista ehdotus', eventForm(null, { proposal })),
+      }, 'Tarkista ja luo'),
+      h('button', {
+        class: 'btn btn-sm btn-ghost',
+        onclick: async () => {
+          try {
+            await api(`/proposals/${proposal.id}/reject`, { method: 'POST' });
+            await refresh();
+            toast('Ehdotus hylätty.');
+          } catch (err) {
+            toast(err.message, true);
+          }
+        },
+      }, 'Hylkää')),
+  );
+}
+
+function proposalPanel() {
+  const uudet = state.proposals.filter((p) => p.status === 'uusi');
+  if (!uudet.length) return null;
+  return h('section', { class: 'panel proposals' },
+    h('h2', {}, `Ehdotukset sähköpostista (${uudet.length})`),
+    ...uudet.map(proposalCard));
 }
 
 /* ------------------------------ vaihekortit ------------------------------ */
@@ -676,13 +807,15 @@ function renderMain() {
   const content = document.getElementById('content');
   const event = selected();
 
+  const proposals = proposalPanel();
+
   if (!event) {
-    content.replaceChildren(h('div', { class: 'panel' },
+    content.replaceChildren(...[proposals, h('div', { class: 'panel' },
       h('h2', {}, 'Aloitus'),
       h('p', { class: 'empty' },
         'Luo ensimmäinen tapahtuma, niin AddHelper avaa sille koko työnkulun: kuva, tekstit, '
         + 'Facebook-tapahtuma, jakelu Instagramiin, Clubyyn ja Webadoriin, kalenterivienti ja juliste.'),
-    ));
+    )].filter(Boolean));
     return;
   }
 
@@ -717,11 +850,12 @@ function renderMain() {
       h('div', { class: 'lane-cards' },
         ...visible.filter((s) => s.lane === lane).map((step) => stepCard(event, step)))));
 
-  content.replaceChildren(head, ...lanes);
+  content.replaceChildren(...[proposals, head, ...lanes].filter(Boolean));
 }
 
 function render() {
   renderSidebar();
+  renderMailPanel();
   renderWednesday();
   renderMain();
 }

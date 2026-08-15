@@ -12,6 +12,8 @@
     "dev": "node --env-file-if-exists=.env --watch server.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.117.1"
+    "@anthropic-ai/sdk": "^0.117.1",
+    "imapflow": "^1.7.1",
+    "mailparser": "^3.9.15"
   }
 }

@@ -10,6 +10,30 @@ export function aiConfigured() {
   return Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
 }
 
+/**
+ * Tarkistaa avaimen muodon jo käynnistyksessä, jotta liittämisvirhe ei paljastu
+ * vasta 401-virheenä ensimmäisellä tekstigeneroinnilla.
+ * @returns {string|null} varoitus tai null jos muoto näyttää oikealta
+ */
+export function keyFormatWarning() {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) return null;
+
+  if (!key.startsWith('sk-ant-')) {
+    const extra = key.indexOf('sk-ant-');
+    if (extra > 0) {
+      return `Avaimen alussa on ylimääräistä: "${key.slice(0, extra)}". `
+        + 'Avaimen pitää alkaa sk-ant- — poista ylimääräiset merkit .env-tiedostosta.';
+    }
+    return 'Avain ei ala sk-ant-. Tarkista että kopioit koko avaimen .env-tiedostoon.';
+  }
+  if (key.length < 90) {
+    return `Avain on vain ${key.length} merkkiä ja vaikuttaa katkenneelta. `
+      + 'Kopioi koko avain uudelleen (yleensä noin 108 merkkiä).';
+  }
+  return null;
+}
+
 const SCHEMA = {
   type: 'object',
   properties: {

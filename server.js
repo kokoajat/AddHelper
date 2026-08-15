@@ -9,7 +9,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { aiConfigured, generateCopy } from './src/ai.js';
+import { aiConfigured, generateCopy, keyFormatWarning } from './src/ai.js';
 import { buildTemplateCopy } from './src/copy.js';
 import {
   UPLOAD_DIR,
@@ -110,7 +110,11 @@ async function handleApi(req, res, url) {
   const [, resource, id, sub, subId] = segments;
 
   if (resource === 'config' && req.method === 'GET') {
-    return json(res, 200, { aiConfigured: aiConfigured(), model: process.env.ADDHELPER_MODEL || 'claude-opus-5' });
+    return json(res, 200, {
+      aiConfigured: aiConfigured(),
+      model: process.env.ADDHELPER_MODEL || 'claude-opus-5',
+      keyWarning: keyFormatWarning(),
+    });
   }
 
   if (resource === 'calendar.ics' && req.method === 'GET') {
@@ -242,4 +246,6 @@ server.listen(PORT, () => {
   console.log(aiConfigured()
     ? '  AI-tekstigenerointi: käytössä'
     : '  AI-tekstigenerointi: pois (aseta ANTHROPIC_API_KEY) — mallipohjat käytössä');
+  const warning = keyFormatWarning();
+  if (warning) console.warn(`  ⚠️  ${warning}`);
 });

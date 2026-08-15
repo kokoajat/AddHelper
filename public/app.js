@@ -570,8 +570,15 @@ document.addEventListener('keydown', (e) => {
   try {
     state.config = await api('/config');
     const status = document.getElementById('ai-status');
-    status.textContent = state.config.aiConfigured ? `AI: ${state.config.model}` : 'AI: pois — mallipohjat';
-    status.className = state.config.aiConfigured ? 'pill pill-ok' : 'pill pill-muted';
+    if (state.config.keyWarning) {
+      status.textContent = 'AI: avain virheellinen';
+      status.className = 'pill pill-accent';
+      status.title = state.config.keyWarning;
+      toast(state.config.keyWarning, true);
+    } else {
+      status.textContent = state.config.aiConfigured ? `AI: ${state.config.model}` : 'AI: pois — mallipohjat';
+      status.className = state.config.aiConfigured ? 'pill pill-ok' : 'pill pill-muted';
+    }
     await refresh(false);
   } catch (err) {
     toast(err.message, true);
